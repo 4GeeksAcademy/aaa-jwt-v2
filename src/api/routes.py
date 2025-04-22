@@ -1,11 +1,11 @@
-"""
-This module takes care of starting the API Server, Loading the DB and Adding the endpoints
-"""
 from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
+from flask_jwt_extended import create_access_token
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required
 
 api = Blueprint('api', __name__)
 
@@ -24,8 +24,8 @@ def handle_hello():
 
     return jsonify(response_body), 200
 
-@api.route('/user', methods=['POST'])
-def create_user():
+@api.route('/signup', methods=['POST'])
+def signup():
 
     name = request.json.get('name')
     password = request.json.get('password')
@@ -47,7 +47,10 @@ def create_user():
     db.session.add(new_user)
     db.session.commit()
 
-    return jsonify(new_user.serialize()), 201
+    user_id = new_user.id
+    access_token = create_access_token(identity=str(user_id))
+
+    return jsonify({ **new_user.serialize(), "access_token": access_token }), 201
 
 @api.route('/login', methods=['POST'])
 def login():
@@ -62,4 +65,43 @@ def login():
     if not current_user:
         return jsonify({'msg': 'usuario no existe'}), 404
     
-    #
+    pass_db = current_user.password
+    true_or_false = bcrypt.check_password_hash(pass_db, password)
+
+    if true_or_false:
+
+            user_id = current_user.id
+            access_token = create_access_token(
+            identity=str(user_id))
+
+            return jsonify({
+                "msg": "Sesion iniciada",
+                "access_token": access_token,
+                "email": email
+            }), 200
+            
+
+    else:
+            return jsonify({"msg": "Usuario o contraseña invalido."}), 401
+    
+@api.route('/private', methods=["GET"])
+@jwt_required()
+def home():
+
+    current_user_id = get_jwt_identity()
+
+    if current_user_id:
+        users = User.query.all()
+        user_list = []
+        for user in users:
+            user_act = {
+            "id": user.id,
+            "email": user.email,
+            "is_active": user.is_active
+            }
+            user_list.append(user_act)
+
+        return jsonify({"users": user_list}), 200
+
+    else:
+        return jsonify({"Error": "Inicia sesion"}), 401
